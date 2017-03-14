@@ -84,15 +84,34 @@ def create_hash_table(tweet_list):
 
 #   Read the credentials file (default: credentials.txt)
 def read_creds(fname):
-    data = []
+    consumer_key = None
+    consumer_secret = None
+    access_key = None
+    access_secret = None
     try:
         with open(fname) as file:
             for line in file:
-                data.append(line.strip())
+                data = line.strip().split("=")
+                key = data[0].upper()
+                val = data[1]
+
+                if key == "CONSUMER_KEY":
+                    consumer_key = val
+                elif key == "CONSUMER_SECRET":
+                    consumer_secret = val
+                elif key == "ACCESS_KEY":
+                    access_key = val
+                elif key == "ACCESS_SECRET":
+                    access_secret = val
+                else:
+                    print("Warning: credential '" + key + "' not recognized.")
+
     except FileNotFoundError:
         raise RequiredFileNotFoundException(fname)
 
-    return data[0], data[1], data[2], data[3]
+    if consumer_key is None or consumer_secret is None or access_key is None or access_secret is None:
+        print("Warning: Incomplete credentials")
+    return consumer_key, consumer_secret, access_key, access_secret
 
 
 #   Read the settings file (default: settings.cfg)
@@ -110,11 +129,11 @@ def read_cfg(fname):
 
                 if line[0] != "#" and len(line) > 1:
 
-                    cfg_val = line.strip().split('=')
+                    data = line.strip().split('=')
 
-                    key = cfg_val[0]
+                    key = data[0]
                     try:
-                        val = cfg_val[1]
+                        val = data[1]
                     except IndexError:
                         raise MalformedConfigurationError("Configuration key '" + key + "' has no associated value")
 
