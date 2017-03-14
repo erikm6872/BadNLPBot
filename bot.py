@@ -192,20 +192,21 @@ def create_tweet(max_len):
     # Start with a randomly chosen word in the hash table
     while cur_word not in bigram_hash:
         cur_word = all_words[random.randint(1, len(all_words))]
-    cur_word = cur_word.capitalize()
-    text += cur_word
+    #cur_word = cur_word.capitalize()
+    text += cur_word.capitalize()
 
     num_words = 1
 
     # Loop until one of the break conditions is met
     while True:
-
         # Get the next word in the tweet (most common word following cur_word) and remove that word from the hash table
         try:
             next_word = max(bigram_hash[cur_word], key=bigram_hash[cur_word].get)
             bigram_hash[cur_word].pop(next_word)
-        # If a ValueError is thrown, it means that there isn't a next word in the list
+        # If a KeyError or ValueError is thrown, it means that there isn't a next word in the list
         except ValueError:
+            break
+        except KeyError:
             break
 
         cur_word = next_word
