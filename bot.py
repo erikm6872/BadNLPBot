@@ -11,6 +11,8 @@ import requests
 
 cred_file = "credentials.txt"
 cfg_file = "settings.cfg"
+banned_words_file = "banned_words.txt"
+banned_phrase_file = "banned_phrases.txt"
 
 CONSUMER_KEY = ''
 CONSUMER_SECRET = ''
@@ -23,7 +25,8 @@ acc_tweets = []
 start_t = -1
 read_time = 0
 min_len = 5
-banned_words = ['']
+banned_words = []
+banned_phrases = {}
 
 match_pattern = r'[@].*|RT|http.*|.*\\n.*|[^a-zA-Z0-9!\?\.]'  # Pattern to reject
 all_words = []
@@ -50,14 +53,17 @@ def create_hash_table(tweet_list):
 
             all_words.append(cur_word)
             all_words.append(next_word)
-
-            if cur_word not in bigram_hash:
-                bigram_hash[cur_word] = {}
-
-            if next_word not in bigram_hash[cur_word]:
-                bigram_hash[cur_word][next_word] = 1
+            if cur_word in banned_phrases.keys() and next_word == banned_phrases[cur_word]:
+                pass
             else:
-                bigram_hash[cur_word][next_word] += 1
+            #if cur_word != "most" or next_word != "fucked":
+                if cur_word not in bigram_hash:
+                    bigram_hash[cur_word] = {}
+
+                if next_word not in bigram_hash[cur_word]:
+                    bigram_hash[cur_word][next_word] = 1
+                else:
+                    bigram_hash[cur_word][next_word] += 1
 
     #print(bigram_hash)
 
@@ -72,7 +78,7 @@ def read_creds(fname):
     return data[0], data[1], data[2], data[3]
 
 
-#   Read the settings file (default:
+#   Read the settings file (default: settings.cfg)
 def read_cfg(fname):
     data = []
     with open(fname) as file:
@@ -82,7 +88,22 @@ def read_cfg(fname):
     return int(data[0]), data[1], int(data[2])
 
 
-def create_tweet():
+#   Read the banned words and phrases file.
+def read_ban_files(word_fname, phrase_fname):
+    global banned_words
+    global banned_phrases
+
+    with open(word_fname) as word_file:
+        for line in word_file:
+            banned_words.append(line.strip())
+
+    with open(phrase_fname) as phrase_file:
+        for line in phrase_file:
+            words = line.strip().split(',')
+            banned_phrases[words[0]] = words[1]
+
+
+def create_tweet(max_len):
     text = ""
     cur_word = "@"  # Begin with a word we know isn't in the list
 
@@ -107,7 +128,7 @@ def create_tweet():
 
         cur_word = next_word
 
-        if len(text) + len(cur_word) > 140:
+        if len(text) + len(cur_word) + 1 > max_len:
             break
         else:
             text += " " + cur_word
@@ -115,7 +136,6 @@ def create_tweet():
 
     # Make sure the number of words in the tweet meets the minimum length
     if num_words < min_len:
-        #print("Generated tweet does not meet minimum word length (" + str(min_len) + "), regenerating...")
         return None
     else:
         print("Tweet generation successful: ", end='')
@@ -143,6 +163,7 @@ def main():
 
     CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET = read_creds(cred_file)
     read_time, pattern, min_len = read_cfg(cfg_file)
+    read_ban_files(banned_words_file, banned_phrase_file)
 
     while True:
         all_words = []
@@ -151,7 +172,7 @@ def main():
         bigram_hash = {}
 
         start_t = time.time()
-        print("Collecting tweets for " + repr(read_time) + " seconds...")
+        print("[" + time.strftime("%m/%d/%y %H:%M:%S") + "] Collecting tweets for " + repr(read_time) + " seconds...")
         while time.time() < start_t + read_time:
             try:
                 stream = TweetStreamer(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET)
@@ -160,7 +181,7 @@ def main():
                 #print("Error: " + repr(e))
                 pass
 
-        print("Tweets collected. Processing...")
+        print("[" + time.strftime("%m/%d/%y %H:%M:%S") + "]" + repr(len(tweets)) + " tweets collected. Processing...")
         for x in tweets:
             raw_text = x.split(' ')
             text = []
@@ -171,14 +192,16 @@ def main():
 
         create_hash_table(acc_tweets)
         tweet_text = None
+        tweet_info = "\n[" + repr(read_time) + "s/" + repr(len(tweets)) + " tweets]"
         while tweet_text is None:
-            tweet_text = create_tweet()
+            tweet_text = create_tweet(140 - len(tweet_info))
+
+        tweet_text += tweet_info
 
         twitter = Twython(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET)
         print("")
-        #print(tweet_text + " ** " + repr(len(tweet_text)) + "\n")   #Print
-
         twitter.update_status(status=tweet_text)
+        print("[" + time.strftime("%m/%d/%y %H:%M:%S") + "] Tweet posted successfully.")
 
 
 main()
