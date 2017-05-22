@@ -2,6 +2,7 @@
 #   Erik McLaughlin
 #   1/16/17
 
+from config import *
 from twython import Twython
 from twython import TwythonStreamer
 import time
@@ -9,20 +10,7 @@ import re
 import random
 import requests
 
-cfg_file = "settings.cfg"
-
-cred_file = "credentials.txt"
-banned_words_file = None
-banned_phrases_file = None
-read_time = 600
-min_len = 10
-banned_words = []
-banned_phrases = {}
-
-CONSUMER_KEY = ''
-CONSUMER_SECRET = ''
-ACCESS_KEY = ''
-ACCESS_SECRET = ''
+config = None
 
 tweets = []
 acc_tweets = []
@@ -35,8 +23,12 @@ bigram_hash = {}
 
 
 class TweetStreamer(TwythonStreamer):
+    def __init__(self):
+        super(TweetStreamer, self).__init__(config.credentials.CONSUMER_KEY, config.credentials.CONSUMER_SECRET, config.credentials.ACCESS_KEY,
+                                            config.credentials.ACCESS_SECRET)
+
     def on_success(self, data):
-        if time.time() > start_t + read_time:
+        if time.time() > start_t + config.read_time:
             self.disconnect()
         if 'text' in data:
             tweets.append(data['text'])
@@ -45,16 +37,10 @@ class TweetStreamer(TwythonStreamer):
         print(status_code)
 
 
-class RequiredFileNotFoundException(FileNotFoundError):
-    def __init__(self, fname):
-        self.msg = "Required file '" + fname + "' not found."
-        super(RequiredFileNotFoundException, self).__init__(self.msg)
-
-
-class MalformedConfigurationError(Exception):
-    def __init__(self, msg=None):
-        self.msg = msg
-        super(MalformedConfigurationError, self).__init__(msg)
+class TwitterAccess(Twython):
+    def __init__(self):
+        super(TwitterAccess, self).__init__(config.credentials.CONSUMER_KEY, config.credentials.CONSUMER_SECRET, config.credentials.ACCESS_KEY,
+                                            config.credentials.ACCESS_SECRET)
 
 
 def create_hash_table(tweet_list):
@@ -67,10 +53,12 @@ def create_hash_table(tweet_list):
             all_words.append(next_word)
 
             # Check the current and next words against the ban lists
-            if cur_word in banned_phrases.keys() and next_word == banned_phrases[cur_word]:
+            # if cur_word in banned_phrases.keys() and next_word == banned_phrases[cur_word]:
+            if config.phrase_banned(cur_word, next_word) or config.word_banned(cur_word) \
+                    or config.word_banned(next_word):
                 pass
-            elif cur_word in banned_words or next_word in banned_words:
-                pass
+            # elif cur_word in banned_words or next_word in banned_words:
+            #    pass
 
             else:
                 if cur_word not in bigram_hash:
@@ -82,109 +70,6 @@ def create_hash_table(tweet_list):
                     bigram_hash[cur_word][next_word] += 1
 
 
-#   Read the credentials file (default: credentials.txt)
-def read_creds(fname):
-    consumer_key = None
-    consumer_secret = None
-    access_key = None
-    access_secret = None
-    try:
-        with open(fname) as file:
-            for line in file:
-                data = line.strip().split("=")
-                key = data[0].upper()
-                val = data[1]
-
-                if key == "CONSUMER_KEY":
-                    consumer_key = val
-                elif key == "CONSUMER_SECRET":
-                    consumer_secret = val
-                elif key == "ACCESS_KEY":
-                    access_key = val
-                elif key == "ACCESS_SECRET":
-                    access_secret = val
-                else:
-                    print("Warning: credential '" + key + "' not recognized.")
-
-    except FileNotFoundError:
-        raise RequiredFileNotFoundException(fname)
-
-    if consumer_key is None or consumer_secret is None or access_key is None or access_secret is None:
-        print("Warning: Incomplete credentials")
-    return consumer_key, consumer_secret, access_key, access_secret
-
-
-#   Read the settings file (default: settings.cfg)
-def read_cfg(fname):
-
-    read_time_cfg = None
-    min_words = None
-    cred_fname = cred_file
-    words_fname = None
-    phrase_fname = None
-
-    try:
-        with open(fname) as file:
-            for line in file:
-
-                if line[0] != "#" and len(line) > 1:
-
-                    data = line.strip().split('=')
-
-                    key = data[0]
-                    try:
-                        val = data[1]
-                    except IndexError:
-                        raise MalformedConfigurationError("Configuration key '" + key + "' has no associated value")
-
-                    if key == "read_time":
-                        read_time_cfg = int(val)
-                    elif key == "min_words":
-                        min_words = int(val)
-                    elif key == "cred_file":
-                        cred_fname = val.strip("'")
-                    elif key == "ban_words":
-                        words_fname = val.strip("'")
-                    elif key == "ban_phrase":
-                        phrase_fname = val.strip("'")
-
-                    else:
-                        print("Warning: Configuration key '" + key + "' not recognized")
-                        # raise MalformedConfigurationError("'" + key + "' is not a valid configuration key.")
-
-    except FileNotFoundError:
-        raise RequiredFileNotFoundException(fname)
-
-    return read_time_cfg, min_words, cred_fname, words_fname, phrase_fname
-
-
-#   Read the banned words and phrases file.
-def read_ban_files(word_fname, phrase_fname):
-    global banned_words
-    global banned_phrases
-
-    if word_fname is not None:
-        try:
-            with open(word_fname) as word_file:
-                for line in word_file:
-                    banned_words.append(line.strip())
-        except FileNotFoundError:
-            print("Warning: '" + word_fname + "' not found. No words will be banned.")
-    else:
-        print("Warning: No banned words file specified.")
-
-    if phrase_fname is not None:
-        try:
-            with open(phrase_fname) as phrase_file:
-                for line in phrase_file:
-                    words = line.strip().split(',')
-                    banned_phrases[words[0]] = words[1]
-        except FileNotFoundError:
-            print("Warning: '" + phrase_fname + "' not found. No phrases will be banned.")
-    else:
-        print("Warning: No banned phrases file specified.")
-
-
 def create_tweet(max_len):
     text = ""
     cur_word = "@"  # Begin with a word we know isn't in the list
@@ -192,7 +77,6 @@ def create_tweet(max_len):
     # Start with a randomly chosen word in the hash table
     while cur_word not in bigram_hash:
         cur_word = all_words[random.randint(1, len(all_words))]
-    #cur_word = cur_word.capitalize()
     text += cur_word.capitalize()
 
     num_words = 1
@@ -219,7 +103,7 @@ def create_tweet(max_len):
             num_words += 1
 
     # Make sure the number of words in the tweet meets the minimum length
-    if num_words < min_len:
+    if num_words < config.min_len:
         return None
     else:
         print("Tweet generation successful: ", end='')
@@ -232,10 +116,6 @@ def create_tweet(max_len):
 
 
 def main():
-    global CONSUMER_KEY
-    global CONSUMER_SECRET
-    global ACCESS_KEY
-    global ACCESS_SECRET
 
     global start_t
     global acc_tweets
@@ -243,26 +123,18 @@ def main():
     global all_words
     global bigram_hash
 
-    global read_time
-    global min_len
-    global cred_file
-    global banned_words_file
-    global banned_phrase_file
+    global config
 
     print("--------- Twitter Bot ---------")
     try:
-
-        print("Reading config files...")
-        read_time, min_len, cred_file, banned_words_file, banned_phrase_file = read_cfg(cfg_file)
-
-        print("Reading credentials files...")
-        CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET = read_creds(cred_file)
-
-        print("Reading ban files...")
-        read_ban_files(banned_words_file, banned_phrase_file)
+        config = Settings()
         print()
 
     except RequiredFileNotFoundException as e:
+        print("Error: " + e.msg)
+        exit(1)
+
+    except MalformedConfigurationError as e:
         print("Error: " + e.msg)
         exit(1)
 
@@ -273,15 +145,15 @@ def main():
         bigram_hash = {}
 
         start_t = time.time()
-        print("[" + time.strftime("%m/%d/%y %H:%M:%S") + "] Collecting tweets for " + repr(read_time) + " seconds...")
-        while time.time() < start_t + read_time:
+        print("[" + time.strftime(config.time_format) + "] Collecting tweets for " + repr(config.read_time) + " seconds...")
+        while time.time() < start_t + config.read_time:
             try:
-                stream = TweetStreamer(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET)
+                stream = TweetStreamer()
                 stream.statuses.filter(track='twitter', language='en')
             except requests.exceptions.ChunkedEncodingError:
                 pass
 
-        print("[" + time.strftime("%m/%d/%y %H:%M:%S") + "]" + repr(len(tweets)) + " tweets collected. Processing...")
+        print("[" + time.strftime(config.time_format) + "]" + repr(len(tweets)) + " tweets collected. Processing...")
         for x in tweets:
             raw_text = x.split(' ')
             text = []
@@ -292,15 +164,15 @@ def main():
 
         create_hash_table(acc_tweets)
         tweet_text = None
-        tweet_info = "\n[" + repr(read_time) + "s/" + repr(len(tweets)) + " tweets]"
+        tweet_info = "\n[" + repr(config.read_time) + "s/" + repr(len(tweets)) + " tweets]"
         while tweet_text is None:
             tweet_text = create_tweet(140 - len(tweet_info))
 
         tweet_text += tweet_info
 
-        twitter = Twython(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET)
+        twitter = TwitterAccess()
         twitter.update_status(status=tweet_text)
-        print("[" + time.strftime("%m/%d/%y %H:%M:%S") + "] Tweet posted successfully.\n\n")
+        print("[" + time.strftime(config.time_format) + "] Tweet posted successfully.\n\n")
 
 
 main()
