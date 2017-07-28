@@ -1,41 +1,55 @@
-#   bot.py
-#   Erik McLaughlin
-#   1/16/17
-
-from config import *
+from flask import Flask, request
+from flask_restful import Resource, Api
 from twython import Twython
 from twython import TwythonStreamer
+
+from config import *
 import time
 import re
 import random
 import requests
+from sqlalchemy import create_engine
+from json import dumps
 
-config = None
+app = Flask(__name__)
+api = Api(app)
+
+config = Settings()
 
 tweets = []
 acc_tweets = []
 
-start_t = None
+start_t = time.time()
 
 match_pattern = r'[@].*|RT|http.*|.*\\n.*|[^a-zA-Z0-9!\?\.]'  # Pattern to reject
 all_words = []
 bigram_hash = {}
+config = Settings()
 
 
 class TweetStreamer(TwythonStreamer):
-    def __init__(self):
+    delay = 0
 
-        super(TweetStreamer, self).__init__(config.credentials.CONSUMER_KEY, config.credentials.CONSUMER_SECRET, config.credentials.ACCESS_KEY,
-                                    config.credentials.ACCESS_SECRET)
+    def __init__(self, config_t=config, start_t_t=start_t):
+        self.config_t = config_t
+        self.start_t_t = start_t_t
+        super(TweetStreamer, self).__init__(config_t.credentials.CONSUMER_KEY, config_t.credentials.CONSUMER_SECRET, config_t.credentials.ACCESS_KEY,
+                                    config_t.credentials.ACCESS_SECRET)
 
     def on_success(self, data):
-        if time.time() > start_t + config.read_time:
+        if time.time() > self.start_t_t + self.config_t.read_time:
             self.disconnect()
         if 'text' in data:
             tweets.append(data['text'])
 
     def on_error(self, status_code, data):
-        print(status_code)
+        print('TweetStreamer Error: ' + repr(status_code) + ': ' + repr(data))
+        if status_code == 420:
+            self.delay += 1
+            print("delay=" + repr(self.delay))
+            time.sleep(self.delay)
+            self.config_t.read_time += self.delay
+
 
 
 class TwitterAccess(Twython):
@@ -115,46 +129,47 @@ def create_tweet(max_len):
             pass
         return text
 
+class GetTweetTimed(Resource):
+    def get(self, read_time):
+        t = GetTweet()
+        return t.get(read_time)
 
-def main():
+class GetTweet(Resource):
 
-    global start_t
-    global acc_tweets
-    global tweets
-    global all_words
-    global bigram_hash
+    def get(self, read_time=10):
+        global start_t
+        global acc_tweets
+        global tweets
+        global all_words
+        global bigram_hash
 
-    global config
+        global config
 
-    print("--------- Twitter Bot ---------")
-    try:
-        config = Settings()
-        print()
+        try:
+            config = Settings()
+            print()
 
-    except RequiredFileNotFoundException as e:
-        print("Error: " + e.msg)
-        exit(1)
+        except RequiredFileNotFoundException as e:
+            return {'Error': e.msg}
+            exit(1)
 
-    except MalformedConfigurationError as e:
-        print("Error: " + e.msg)
-        exit(1)
+        except MalformedConfigurationError as e:
+            return {'Error': e.msg}
+            exit(1)
 
-    while True:
         all_words = []
         tweets = []
         acc_tweets = []
         bigram_hash = {}
 
         start_t = time.time()
-        print("[" + time.strftime(config.time_format) + "] Collecting tweets for " + repr(config.read_time) + " seconds...")
-        while time.time() < start_t + config.read_time:
+        while time.time() < start_t + read_time:
             try:
                 stream = TweetStreamer()
                 stream.statuses.filter(track='twitter', language='en')
             except requests.exceptions.ChunkedEncodingError:
                 pass
 
-        print("[" + time.strftime(config.time_format) + "]" + repr(len(tweets)) + " tweets collected. Processing...")
         for x in tweets:
             raw_text = x.split(' ')
             text = []
@@ -165,15 +180,14 @@ def main():
 
         create_hash_table(acc_tweets)
         tweet_text = None
-        tweet_info = "\n[" + repr(config.read_time) + "s/" + repr(len(tweets)) + " tweets]"
+        tweet_info = "\n[" + repr(read_time) + "s/" + repr(len(tweets)) + " tweets]"
         while tweet_text is None:
             tweet_text = create_tweet(140 - len(tweet_info))
 
-        tweet_text += tweet_info
+        return {'tweet_text': tweet_text, 'tweet_info': tweet_info}
 
-        twitter = TwitterAccess()
-        twitter.update_status(status=tweet_text)
-        print("[" + time.strftime(config.time_format) + "] Tweet posted successfully.\n\n")
+api.add_resource(GetTweetTimed, '/tweet/<int:read_time>')
+api.add_resource(GetTweet, '/tweet')
 
-
-main()
+if __name__ == '__main__':
+    app.run()
