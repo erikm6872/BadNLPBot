@@ -24,8 +24,8 @@ bigram_hash = {}
 
 class TweetStreamer(TwythonStreamer):
     def __init__(self):
-        super(TweetStreamer, self).__init__(config.credentials.CONSUMER_KEY, config.credentials.CONSUMER_SECRET, config.credentials.ACCESS_KEY,
-                                            config.credentials.ACCESS_SECRET)
+        super(TweetStreamer, self).__init__(config.credentials.CONSUMER_KEY, config.credentials.CONSUMER_SECRET,
+                                            config.credentials.ACCESS_KEY, config.credentials.ACCESS_SECRET)
 
     def on_success(self, data):
         if time.time() > start_t + config.read_time:
@@ -34,13 +34,13 @@ class TweetStreamer(TwythonStreamer):
             tweets.append(data['text'])
 
     def on_error(self, status_code, data):
-        print(status_code)
+        print("Response Error " + repr(status_code) + ": " + str(data).strip())
 
 
 class TwitterAccess(Twython):
     def __init__(self):
-        super(TwitterAccess, self).__init__(config.credentials.CONSUMER_KEY, config.credentials.CONSUMER_SECRET, config.credentials.ACCESS_KEY,
-                                            config.credentials.ACCESS_SECRET)
+        super(TwitterAccess, self).__init__(config.credentials.CONSUMER_KEY, config.credentials.CONSUMER_SECRET,
+                                            config.credentials.ACCESS_KEY, config.credentials.ACCESS_SECRET)
 
 
 def create_hash_table(tweet_list):
@@ -149,7 +149,7 @@ def main():
         while time.time() < start_t + config.read_time:
             try:
                 stream = TweetStreamer()
-                stream.statuses.filter(track='twitter', language='en')
+                stream.statuses.filter(track='twitter', language=config.lang)
             except requests.exceptions.ChunkedEncodingError:
                 pass
 

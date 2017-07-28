@@ -23,6 +23,7 @@ class Settings:
     read_time = 600
     min_len = 10
     time_format = "%m/%d/%y %H:%M:%S"
+    lang = 'en'
     banned_words = []
     banned_phrases = {}
 
@@ -60,7 +61,8 @@ class Settings:
                             self.banned_phrases_file = val.strip("'")
                         elif key == "time_format":
                             self.time_format = val.strip("'")
-
+                        elif key == "lang":
+                            self.lang = val.strip("'")
                         else:
                             raise MalformedConfigurationError("'" + key + "' is not a valid configuration key.")
 
